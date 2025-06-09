@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI PDF Chatbot</title>
+  <style>
+    body { font-family: Arial; background: #f3f3f3; padding: 20px; }
+    #chatbox { width: 100%; max-width: 600px; margin: auto; background: white; border: 1px solid #ccc; padding: 15px; height: 400px; overflow-y: auto; }
+    .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
+    .user { background: #d1e7dd; text-align: right; }
+    .bot { background: #f8d7da; text-align: left; }
+    #inputArea { max-width: 600px; margin: 20px auto; display: flex; gap: 10px; }
+    input { flex: 1; padding: 10px; font-size: 16px; }
+    button { padding: 10px 20px; font-size: 16px; }
+  </style>
+</head>
+<body>
+
+<h2>Ask Your PDF Assistant</h2>
+<div id="chatbox"></div>
+
+<div id="inputArea">
+  <input type="text" id="userInput" placeholder="Ask a question..." />
+  <button onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+const chatbox = document.getElementById("chatbox");
+const API_KEY = "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";
+const ASSISTANT_ID = "asst_x6zteW2LN5m0RZtWM8PcMfN1"; // your assistant ID
+
+async function sendMessage() {
+  const input = document.getElementById("userInput");
+  const userText = input.value.trim();
+  if (!userText) return;
+  appendMessage(userText, "user");
+  input.value = "";
+  appendMessage("⏳ Thinking...", "bot");
+
+  try {
+    // 1. Create thread
+    const threadRes = await fetch("https://api.openai.com/v1/threads", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "OpenAI-Beta": "assistants=v2"
+      }
+    });
+    const thread = await threadRes.json();
+    const threadId = thread.id;
+
+    // 2. Add user message
+    await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+        "OpenAI-Beta": "assistants=v2"
+      },
+      body: JSON.stringify({ role: "user", content: userText })
+    });
+
+    // 3. Run assistant
+    const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+        "OpenAI-Beta": "assistants=v2"
+      },
+      body: JSON.stringify({ assistant_id: ASSISTANT_ID })
+    });
+    const run = await runRes.json();
+
+    // 4. Poll until done
+    let status = "queued";
+    while (status !== "completed") {
+      await new Promise(r => setTimeout(r, 2000));
+      const statusRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`, {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          "OpenAI-Beta": "assistants=v2"
+        }
+      });
+      const statusData = await statusRes.json();
+      status = statusData.status;
+    }
+
+    // 5. Get reply
+    const msgRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "OpenAI-Beta": "assistants=v2"
+      }
+    });
+    const msgData = await msgRes.json();
+    const reply = msgData.data[0].content[0].text.value;
+    document.querySelectorAll(".bot").slice(-1)[0].textContent = reply;
+  } catch (err) {
+    document.querySelectorAll(".bot").slice(-1)[0].textContent = "⚠️ Error: " + err.message;
+  }
+}
+
+function appendMessage(text, sender) {
+  const msg = document.createElement("div");
+  msg.className = `message ${sender}`;
+  msg.textContent = text;
+  chatbox.appendChild(msg);
+  chatbox.scrollTop = chatbox.scrollHeight;
+}
+</script>
+
+</body>
+</html>
